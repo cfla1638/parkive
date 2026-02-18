@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 from rich.console import Console
 from typing import Annotated
 from . import config
-from .common import iter_managed_files
+from .common import iter_files_to_process
 
 import os
 import re
@@ -180,7 +180,9 @@ def source_remove(name: Annotated[str, typer.Argument(help="Name of the source t
 @source_app.command("change")
 def source_convert(src: Annotated[str, typer.Argument(help="Source name to change from")],
                    tgt: Annotated[str, typer.Argument(help="Target source name to change to")],
-                   ctx: typer.Context):
+                   ctx: typer.Context,
+                   files: Annotated[list[str] | None, typer.Option("--file", "-f", help="Only convert the specified files instead of all managed files. It will override the scan_glob configuration. Can be specified multiple times.")] = None,
+                   glob: Annotated[list[str] | None, typer.Option("--glob", "-g", help="Override the scan_glob configuration with the specified glob patterns. Can be specified multiple times.")] = None):
     """Change source prefix from src to tgt in all managed files."""
     parkive_root = Path(ctx.obj["parkive_root"])
     user_config = ctx.obj["user_config"]
@@ -190,10 +192,14 @@ def source_convert(src: Annotated[str, typer.Argument(help="Source name to chang
     changed_files = 0
     replaced_urls = 0
 
-    for file_path in iter_managed_files(
+    if glob is not None:
+        log.debug(f"Overriding scan_glob with: {glob}")
+
+    for file_path in iter_files_to_process(
         parkive_root=parkive_root,
-        scan_glob=user_config["scope"]["scan_glob"],
+        scan_glob=user_config["scope"]["scan_glob"] if glob is None else glob,
         skip_dirs=user_config["scope"]["skip_dirs"],
+        specified_files=files,
     ):
         original = file_path.read_text(encoding="utf-8")
         converted, count = replace_images_in_text(original, source_prefix, target_prefix)
@@ -209,17 +215,20 @@ def source_convert(src: Annotated[str, typer.Argument(help="Source name to chang
 
 
 @source_app.command("inspect")
-def source_inspect(name: Annotated[str, typer.Argument(help="Name of the source to inspect")], ctx: typer.Context):
+def source_inspect(name: Annotated[str, typer.Argument(help="Name of the source to inspect")], 
+                   ctx: typer.Context,
+                   files: Annotated[list[str] | None, typer.Option("--file", "-f", help="Only inspect the specified files instead of all managed files. It will override the scan_glob configuration. Can be specified multiple times.")] = None):
     """Inspect how many images are using the source with given name."""
     user_config = ctx.obj["user_config"]
     parkive_root = Path(ctx.obj["parkive_root"])
     base_url = require_source(ctx.obj["sources"], name)
 
     matched_cnt = 0
-    for file_path in iter_managed_files(
+    for file_path in iter_files_to_process(
         parkive_root=parkive_root,
         scan_glob=user_config["scope"]["scan_glob"],
         skip_dirs=user_config["scope"]["skip_dirs"],
+        specified_files=files
     ):
         content = file_path.read_text(encoding="utf-8")
         matched_cnt_this_file = count_source_urls(content, base_url)

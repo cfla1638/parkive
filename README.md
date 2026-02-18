@@ -1,3 +1,6 @@
 # Parkive
 
-TODO
+TODO List:
+
+- parkive init
+- parkive source status

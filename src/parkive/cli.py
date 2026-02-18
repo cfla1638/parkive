@@ -83,6 +83,8 @@ def bootstrap(ctx: typer.Context):
      - 寻找包含 .parkive 目录
      - 加载用户配置文件
     """
+    log.debug("This program is running in directory: " + str(Path.cwd()))
+    
     parkive_root = find_parkive_root()
     log.debug(f"Parkive root found at: {parkive_root}")
     if parkive_root is None:

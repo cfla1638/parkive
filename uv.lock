@@ -81,6 +81,7 @@ name = "parkive"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "rich" },
     { name = "tomli" },
     { name = "tomli-w" },
     { name = "typer" },
@@ -93,6 +94,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "rich", specifier = ">=13.7.0" },
     { name = "tomli", specifier = ">=2.4.0" },
     { name = "tomli-w", specifier = ">=1.2.0" },
     { name = "typer", specifier = ">=0.23.1" },
