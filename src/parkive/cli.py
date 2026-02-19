@@ -1,15 +1,20 @@
 from pathlib import Path
 from rich.console import Console
 from rich.logging import RichHandler
+from typing import Annotated
 from .source import source_app
 from .git import git_app
+from .tool import tool_app
+from . import config
+
 import os
 import typer
 import logging
 import tomllib
-from . import config
 
+# 创建 Rich 控制台实例
 console = Console()
+
 
 # 配置日志
 level = os.getenv("PARKIVE_LOG_LEVEL", "WARNING").upper()
@@ -24,10 +29,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("__name__")
 
+
 # 主 CLI 应用
-app = typer.Typer(help="Parkive CLI - A tool for managing your personal archive of notes and images.")
+app = typer.Typer(no_args_is_help=True, help="Parkive CLI - A tool for managing your personal archive of notes and images.")
 app.add_typer(source_app, name="source", help="Image source management")
 app.add_typer(git_app, name="git", help="Git operations related to Parkive")
+app.add_typer(tool_app, name="tool", help="Utility tools for Parkive")
+
 
 def find_parkive_root(start: Path | None = None) -> Path | None:
     """
@@ -38,6 +46,7 @@ def find_parkive_root(start: Path | None = None) -> Path | None:
         if (candidate / ".parkive").is_dir():
             return candidate
     return None
+
 
 def load_user_config(parkive_root: Path) -> dict:
     """
@@ -56,7 +65,7 @@ def load_user_config(parkive_root: Path) -> dict:
             f"No user config found at {user_config_path}. Using default configuration.",
             style=config.warning_style,
         )
-        return config
+        return user_config
     
     try:
         with user_config_path.open("rb") as f:
@@ -85,8 +94,12 @@ def bootstrap(ctx: typer.Context):
     """
     log.debug("This program is running in directory: " + str(Path.cwd()))
     
+    if ctx.invoked_subcommand == "init":
+        return
+
     parkive_root = find_parkive_root()
     log.debug(f"Parkive root found at: {parkive_root}")
+
     if parkive_root is None:
         console.print(
             "Cannot find .parkive directory from current working directory upward.",
@@ -94,3 +107,35 @@ def bootstrap(ctx: typer.Context):
         )
         raise typer.Exit(code=1)
     ctx.obj = {"parkive_root": parkive_root, "user_config": load_user_config(parkive_root)}
+
+
+@app.command("init")
+def init(path : Annotated[str | None, typer.Argument(help="Path to initialize the Parkive project in. If not provided, initializes in the current working directory.")] = None):
+    """
+    Initialize a new Parkive project in the specified directory (or current directory if not specified). This will create a .parkive directory with default configuration files.
+    """
+    cwd = Path.cwd()
+    target_dir = cwd if path is None else Path(path)
+    if not target_dir.is_absolute():
+        target_dir = (cwd / target_dir).resolve()
+
+    parkive_dir = target_dir / ".parkive"
+    parkive_dir.mkdir(parents=True, exist_ok=True)
+
+    sources_path = parkive_dir / "sources.toml"
+    config_path = parkive_dir / "config.toml"
+
+    if not sources_path.exists():
+        sources_path.write_text("[sources]\n", encoding="utf-8")
+
+    if not config_path.exists():
+        scan_glob_items = ", ".join(f'"{item}"' for item in config.DEFAULT_SCAN_GLOB)
+        skip_dirs_items = ", ".join(f'"{item}"' for item in config.DEFAULT_SKIP_DIRS)
+        config_text = (
+            "[scope]\n"
+            f"scan_glob = [{scan_glob_items}]\n"
+            f"skip_dirs = [{skip_dirs_items}]\n"
+        )
+        config_path.write_text(config_text, encoding="utf-8")
+
+    console.print(f"initialized parkive at {target_dir}", style=config.success_style)

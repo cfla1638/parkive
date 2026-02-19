@@ -1,22 +1,21 @@
-from pathlib import Path, PurePosixPath
+from typing import Annotated
+from pathlib import Path
 from urllib.parse import urlparse
 from rich.console import Console
-from typing import Annotated
 from . import config
 from .common import iter_files_to_process
 
-import os
 import re
 import typer
 import tomllib
 import tomli_w
 import logging
 
+
 console = Console()
-
 log = logging.getLogger(__name__)
+source_app = typer.Typer(no_args_is_help=True)
 
-source_app = typer.Typer()
 
 MD_IMAGE_RE = re.compile(
     r"!\[(?P<alt>[^\]]*)\]\((?P<url>[^)\s]+)(?P<tail>\s+\"[^\"]*\")?\)"
@@ -48,6 +47,7 @@ def load_sources(parkive_root: Path) -> dict:
             style="red bold",
         )
         raise typer.Exit(code=1)
+
 
 @source_app.callback()
 def bootstrap(ctx: typer.Context):
@@ -131,6 +131,30 @@ def count_source_urls(content: str, base_url: str) -> int:
     return count
 
 
+def iter_image_urls(content: str):
+    for match in MD_IMAGE_RE.finditer(content):
+        yield match.group("url")
+    for match in HTML_IMAGE_RE.finditer(content):
+        yield match.group("url")
+
+
+def detect_source_name(url: str, sources: dict[str, str]) -> str | None:
+    matched_name = None
+    matched_prefix_len = -1
+    for name, prefix in sources.items():
+        if prefix_match(url, prefix) and len(prefix) > matched_prefix_len:
+            matched_name = name
+            matched_prefix_len = len(prefix)
+    return matched_name
+
+
+def unknown_source_kind(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "(relative-or-invalid-url)"
+
+
 def require_source(sources: dict, name: str) -> str:
     if name not in sources:
         console.print(f"source '{name}' not found.", style=config.error_style)
@@ -161,6 +185,7 @@ def source_add(name: Annotated[str, typer.Argument(help="Name of the source to a
     save_sources(ctx.obj["parkive_root"], sources)
     ctx.obj["sources"] = sources
     console.print(f"added source '{name}' => {normalized_url}", style=config.success_style)
+
 
 @source_app.command("remove")
 def source_remove(name: Annotated[str, typer.Argument(help="Name of the source to remove")], ctx: typer.Context):
@@ -223,6 +248,9 @@ def source_inspect(name: Annotated[str, typer.Argument(help="Name of the source 
     parkive_root = Path(ctx.obj["parkive_root"])
     base_url = require_source(ctx.obj["sources"], name)
 
+    console.print(f"name: {name}", style=config.success_style)
+    console.print(f"base_url: {base_url}\n", style=config.success_style)
+
     matched_cnt = 0
     for file_path in iter_files_to_process(
         parkive_root=parkive_root,
@@ -233,11 +261,10 @@ def source_inspect(name: Annotated[str, typer.Argument(help="Name of the source 
         content = file_path.read_text(encoding="utf-8")
         matched_cnt_this_file = count_source_urls(content, base_url)
         matched_cnt += matched_cnt_this_file
-        log.debug(f"Scanned {file_path}, found {matched_cnt_this_file} urls with base {base_url}")
+        console.print(f"{file_path.relative_to(parkive_root).as_posix()}\t{matched_cnt_this_file}", style=config.info_style)
 
-    console.print(f"name: {name}", style=config.info_style)
-    console.print(f"base_url: {base_url}", style=config.info_style)
-    console.print(f"images: {matched_cnt}", style=config.info_style)
+    
+    console.print(f"\nTotal: {matched_cnt}", style=config.success_style)
 
 
 @source_app.command("list")
@@ -251,3 +278,47 @@ def source_list(ctx: typer.Context):
 
     for name in sorted(sources):
         console.print(f"{name}\t{sources[name]}", style=config.info_style)
+
+@source_app.command("status")
+def source_status(
+    ctx: typer.Context,
+    files: Annotated[list[str] | None, typer.Option("--file", "-f", help="Only inspect the specified files instead of all managed files. It will override the scan_glob configuration. Can be specified multiple times.")] = None,
+    glob: Annotated[list[str] | None, typer.Option("--glob", "-g", help="Override the scan_glob configuration with the specified glob patterns. Can be specified multiple times.")] = None,
+):
+    """Show image URL source kinds and their counts in managed files."""
+    user_config = ctx.obj["user_config"]
+    parkive_root = Path(ctx.obj["parkive_root"])
+    sources: dict[str, str] = ctx.obj["sources"]
+
+    known_counts = {name: 0 for name in sources}
+    unknown_counts: dict[str, int] = {}
+
+    for file_path in iter_files_to_process(
+        parkive_root=parkive_root,
+        scan_glob=user_config["scope"]["scan_glob"] if glob is None else glob,
+        skip_dirs=user_config["scope"]["skip_dirs"],
+        specified_files=files,
+    ):
+        content = file_path.read_text(encoding="utf-8")
+        for url in iter_image_urls(content):
+            source_name = detect_source_name(url, sources)
+            if source_name is not None:
+                known_counts[source_name] += 1
+            else:
+                kind = unknown_source_kind(url)
+                unknown_counts[kind] = unknown_counts.get(kind, 0) + 1
+                log.debug(f"Detected unknown source URL: {url} (kind: {kind}) in file {file_path}")
+
+    console.print("Known sources:", style=config.success_style)
+    if not known_counts:
+        console.print("(none)", style=config.warning_style)
+    else:
+        for name, count in sorted(known_counts.items(), key=lambda item: (-item[1], item[0])):
+            console.print(f"{name}\t{sources[name]}\t{count}", style=config.info_style)
+
+    console.print("\nUnknown sources:", style=config.warning_style)
+    if not unknown_counts:
+        console.print("(none)", style=config.info_style)
+    else:
+        for kind, count in sorted(unknown_counts.items(), key=lambda item: (-item[1], item[0])):
+            console.print(f"{kind}\t{count}", style=config.info_style)

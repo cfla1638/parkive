@@ -4,7 +4,7 @@ success_style = "green bold"
 warning_style = "yellow bold"
 info_style = "dim cyan bold"
 
-# Default glob patterns for scanning files
+
+# 默认配置
 DEFAULT_SCAN_GLOB = ["*.md", "**/*.md"]
-# Default directories to skip during scanning
 DEFAULT_SKIP_DIRS = [".git", ".parkive"]
