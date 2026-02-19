@@ -1,10 +1,10 @@
 [project]
 name = "parkive"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "Parkive - A tool for managing your personal archive of notes and images."
 readme = "README.md"
 authors = [
-    { name = "cfla1638", email = "cfla1638@outlook.com" }
+    { name = "cfla1638", email = "cfla1638@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [

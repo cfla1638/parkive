@@ -31,7 +31,7 @@ log = logging.getLogger("__name__")
 
 
 # 主 CLI 应用
-app = typer.Typer(no_args_is_help=True, help="Parkive CLI - A tool for managing your personal archive of notes and images.")
+app = typer.Typer(no_args_is_help=True, help="Parkive - A tool for managing your personal archive of notes and images.")
 app.add_typer(source_app, name="source", help="Image source management")
 app.add_typer(git_app, name="git", help="Git operations related to Parkive")
 app.add_typer(tool_app, name="tool", help="Utility tools for Parkive")
